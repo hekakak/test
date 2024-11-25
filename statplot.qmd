@@ -1,0 +1,288 @@
+---
+title: "多元数据直观表示+线下回归分析"
+toc: true                        #在渲染文档中增加目录
+number-sections: true            #目录增加数字编号
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| warning: false
+
+library(openxlsx)
+library(tidyverse)
+library(aplpack)
+library(TeachingDemos)
+library(fmsb)
+library(ggiraphExtra)
+source("msaR.R")
+
+data=read.xlsx('mvstats5.xlsx','d3.1',rowNames=T)
+```
+
+# 多元数据直观表示
+
+## 各省消费项目均值条形图
+
+省份过多，各省的名称均不能全部显示
+
+```{r}
+barplot(apply(data,1,mean))#按行做均值条形图
+```
+
+将横轴左边旋转90度，各省的名称均可显示
+
+```{r}
+barplot(apply(data,1,mean),las=3)#按行做均值条形图
+```
+
+利用ggplot2包作图较为美观
+
+```{r}
+data %>%
+  mutate(Average_Consumption = rowMeans(select(., -1), na.rm = TRUE)) %>% 
+  ggplot(aes(x = reorder(row.names(data), -Average_Consumption), y = Average_Consumption)) +
+  geom_bar(stat = "identity", position = position_dodge(), colour = "black", fill = "steelblue") +
+  labs(title = "各省消费项目均值条形图", x = "", y = "均值") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+```
+
+## 各消费项目均值条形图
+
+按消费项目做均值图条形图
+
+```{r}
+barplot(apply(data,2,mean))#按列做均值图条形图
+```
+
+对不同项目的条形添加不同颜色
+
+```{r}
+ barplot(apply(data,2,mean),col=1:8) #按列做彩色均值图条形图
+```
+
+去掉食品列后的数据按列做均值条形图
+
+```{r}
+barplot(apply(data[,2:8],2,mean))
+```
+
+按消费项目做中位数条形图
+
+```{r}
+barplot(apply(data,2,median))
+```
+
+利用ggplot作均值条形图
+
+```{r}
+data %>% summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+  pivot_longer(cols = everything(), names_to = "Consumption_Type", values_to = "Average") %>% 
+  mutate(
+    Consumption_Type=factor(Consumption_Type,level=c('食品','衣着','设备','医疗','交通','教育','居住','杂项')),
+  ) %>% 
+  ggplot(aes(x = Consumption_Type, y = Average, fill = Consumption_Type)) +
+  geom_bar(stat = "identity", position = position_dodge(), colour = "black") +
+  theme_minimal() +
+  labs(title = "各消费项目均值条形图", x = "类别", y = "均值",fill = "消费种类")
+```
+
+使各条形的颜色相同
+
+```{r}
+data %>% summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+  pivot_longer(cols = everything(), names_to = "Consumption_Type", values_to = "Average") %>% 
+  mutate(
+    Consumption_Type=factor(Consumption_Type,level=c('食品','衣着','设备','医疗','交通','教育','居住','杂项')),
+  ) %>% 
+  ggplot(aes(x = Consumption_Type, y = Average)) +
+  geom_bar(stat = "identity", position = position_dodge(), colour = "black", fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "各消费项目均值条形图", x = "类别", y = "均值")
+```
+
+## 各消费项目箱线图
+
+boxplot函数直接作箱线图，默认每个变量（列）作一个箱线，并将全部变量的箱线在同一个图中展示。
+
+```{r}
+boxplot(data)#按列做箱线图
+boxplot(data,horizontal=T,las=1)#箱线图中图形按水平放置
+```
+
+利用ggplot函数作箱线图，需要对数据转化为长结果数据
+
+```{r}
+data %>% pivot_longer(cols = 1:8, names_to = "Consumption_Type", values_to = "Value") %>% 
+  mutate(
+    Consumption_Type=factor(Consumption_Type,level=c('食品','衣着','设备','医疗','交通','教育','居住','杂项')),
+  ) %>% 
+  ggplot(aes(x = Consumption_Type, y = Value)) +
+  geom_boxplot() +
+  labs(title = "各消费项目箱线图", x = "", y = "消费水平") +
+  theme_minimal() #  + coord_flip() 
+```
+
+## 各消费项目星相图
+
+## 各消费项目脸谱图
+
+## 各消费项目雷达图
+
+ggplot2的扩展包ggiraphExtra能作雷达图
+
+```{r}
+data[c(1,9,19,28,29,30),] %>% 
+  mutate(省份=rownames(.)) %>% 
+  ggRadar(aes(group = 省份)) 
+```
+
+## 各消费项目调和曲线图
+
+# 线性回归分析
+
+```{r}
+#| echo: false
+#| warning: false
+
+library(openintro)  # for data
+library(tidyverse)  # for data wrangling and visualization
+library(knitr)      # for tables
+library(broom)      # for model summary
+library(glue)       # for regression equation
+
+get_sign <- function(x) {
+  if (x > 0) {
+    return("+")
+  } else {
+    return("-")
+  }
+}
+get_sign <- Vectorize(get_sign)
+
+lm_eq <- function(model){
+  y = as.character(formula(model))[[2]]
+  x = {as.character(formula(model))[[3]] %>% strsplit(" \\+ ")}[[1]]
+  tidy_model <- model %>% tidy() 
+  beta_i=round(tidy_model$estimate,2)[-1]
+  beta_0=round(tidy_model$estimate,2)[1]
+  main <- round(beta_i,2) %>% abs() %>%  paste0(get_sign(beta_i),.,"\\times ",x,collapse ="")
+  paste0("$$ \\widehat{{",y,"}} =",beta_0,main,'$$') %>% glue()
+}
+```
+
+## 一元线性回归2-1
+
+```{r}
+#| echo: false
+
+data=read.xlsx('mvexer5.xlsx','E4.1')
+```
+
+1.  每周加班工作时间(x)与签发新保单数目(y)呈明显正相关
+
+    ```{r}
+    #| echo: false
+
+    plot(data$x,data$y,xlab="每周加班工作时间",ylab="签发新保单数目")
+    ```
+
+2.  每周加班工作时间(x)与签发新保单数目(y)的相关系数为`r cor(data$x,data$y) %>% round(3)` 。
+
+3.  利用每周加班工作时间(x)对签发新保单数目(y)作回归，回归方程为
+
+    ```{r}
+    #| output: asis
+    #| echo: false
+
+    model_fit <- lm(y ~ x, data)
+    lm_eq(model_fit) 
+    ```
+
+4.  随机误差$\epsilon$的标准差$\sigma$的估计值为`r summary(model_fit)$sigma %>% round(2)`
+
+## 多元线性回归2-2
+
+```{r}
+#| echo: false
+
+data=read.xlsx('mvexer5.xlsx','E4.2')
+```
+
+1.  利用广告预算(x~1~)和销售代理数目(x~2~)对年销售额(y)作回归，回归方程为：
+
+    ```{r}
+    #| output: asis
+    #| echo: false
+
+    model_fit <- lm(y ~ ., data)
+    model_fit %>% tidy() %>% kable(digits = c(0, 2, 2, 2, 2))
+    lm_eq(model_fit) 
+    ```
+
+2.  5%显著水平下，广告预算(x~1~)和销售代理数目(x~2~)的系数均不显著。
+
+3.  广告预算(x~1~)与销售额(y)相关系数为`r cor(data$x1,data$y)`；销售代理数目(x~2~)与销售额(y)相关系数为`r cor(data$x2,data$y)` ；广告预算(x~1~)和销售代理数目(x~2~)与年销售额(y)的复相关系数为`r summary(model_fit)$r.squared` 。
+
+## 多元线性回归2-3
+
+## 线性模型选择2-4
+
+```{r}
+#| echo: false
+
+data=read.xlsx('mvexer5.xlsx','E4.4')
+```
+
+1.  货运总量(y)、工业总产值(x~1~)、农业总产值(x~2~)、居民非商品支出(x~3~)的相关系数矩阵为：
+
+    ```{r}
+    #| echo: false
+
+    cor(data) %>% round(3)
+    ```
+
+    散点图矩阵为：
+
+    ```{r}
+    #| echo: false
+
+    plot(data) 
+    ```
+
+2.  回归方程为：
+
+    ```{r}
+    #| output: asis
+    #| echo: false
+
+    model_fit <- lm(y ~ ., data)
+    lm_eq(model_fit) 
+    ```
+
+3.  回归模型的R方为：`r summary(model_fit)$r.squared` ，说明
+
+4.  回归模型F检验说明 ，t检验说明
+
+    ```{r}
+    #| echo: false
+
+    summary(model_fit) 
+    ```
+
+5.  剔除不显著的 后，回归模型为
+
+    ```{r}
+    #| echo: false
+
+    ```
+
+6.  逐步回归的选择的模型为
+
+    ```{r}
+    #| echo: false
+
+    step(model_fit) 
+    ```
