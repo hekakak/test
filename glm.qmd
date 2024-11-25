@@ -1,0 +1,150 @@
+---
+title: "广义线性模型"
+toc: true                        #在渲染文档中增加目录
+number-sections: true            #目录增加数字编号
+format: html
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| warning: false
+
+library(openintro)  # for data
+library(tidyverse)  # for data wrangling and visualization
+library(knitr)      # for tables
+library(broom)      # for model summary
+library(glue)       # for regression equation
+library(DT) 
+library(openxlsx)
+
+get_sign <- function(x) {
+  if (x > 0) {
+    return("+")
+  } else {
+    return("-")
+  }
+}
+get_sign <- Vectorize(get_sign)
+
+lm_eq <- function(model){
+  y = as.character(formula(model))[[2]]
+  x = {as.character(formula(model))[[3]] %>% strsplit(" \\+ ")}[[1]]
+  tidy_model <- model %>% tidy() 
+  beta_i=round(tidy_model$estimate,2)[-1]
+  beta_0=round(tidy_model$estimate,2)[1]
+  main <- round(beta_i,2) %>% abs() %>%  paste0(get_sign(beta_i),.,"\\times ",x,collapse ="")
+  paste0("$$ \\widehat{{",y,"}} =",beta_0,main,'$$') %>% glue()
+}
+
+glm_eq <- function(model){
+  y = as.character(formula(model))[[2]]
+  x = {as.character(formula(model))[[3]] %>% strsplit(" \\+ ")}[[1]]
+  tidy_model <- model %>% tidy() 
+  beta_i=round(tidy_model$estimate,3)[-1]
+  beta_0=round(tidy_model$estimate,2)[1]
+  main <- round(beta_i,3) %>% abs() %>%  paste0(get_sign(beta_i),.,"\\times ",x,collapse ="")
+  paste0("$$ log(\\frac{{p}}{{1-p}}) =",beta_0,main,'$$') %>% glue()
+}
+```
+
+# 广义线性模型
+
+## Logisitic回归：妊娠糖尿病分析
+
+-   因变量：糖尿病(Diabetes){阳性：pos，阴性：neg}，设阳性为1、阴性为0
+
+-   自变量：年龄(Age)、体重指数(BMI，[kg/m^2^]{.underline} )、血糖浓度(Glucose )、舒张压(Diastolic blood pressure，(mm)Hg )、怀孕次数(Number of times pregnant )
+
+-   数据文件：diabetes.csv，共 724个观察值
+
+### 划分训练集和测试集
+
+```{r}
+#| echo: false
+#| warning: false
+
+diabetes<-read.csv("diabetes.csv",header=T)
+diabetes$Diabetes=factor(diabetes$Diabetes)  
+
+id.train<- 1:450                   #前450个观察为训练集
+id.test <- 451:724                 #后274个观察为训练集
+data.train<- diabetes[id.train, ]
+data.test <- diabetes[id.test, ]
+```
+
+-   前450条个案为训练集，用于估计Logist模型
+
+```{r}
+#| echo: false
+
+DT::datatable(data.train)
+
+```
+
+-   后274条个案为测试集，用于评价模型的估计效果
+
+```{r}
+#| echo: false
+
+DT::datatable(data.test)
+```
+
+-   训练集糖尿病率`r prop.table(table(data.train[,2]))[2] %>% round(4)*100`%，测试集糖尿病率为`r prop.table(table(data.test[,2]))[2]%>% round(4)*100`%，两者大致相等。
+
+### 训练集估计回归方程
+
+```{r}
+#| output: asis
+#| echo: false
+
+    glm.fits=glm(Diabetes~.,data=diabetes,subset=id.train,family=binomial);
+    glm.fits %>% tidy() %>% kable(digits = c(0, 3, 2, 2, 2))
+    glm_eq(glm.fits) 
+```
+
+### 测试集预测效果评价
+
+```{r}
+#| echo: false
+
+glm.probs=predict(glm.fits,data.test,type="response")
+y.pred <- rep("neg", 274)
+y.pred[glm.probs>.5]<-"pos"
+y.pred <- factor(y.pred,levels=c("pos","neg"))
+y <- factor(data.test$Diabetes,levels=c("pos","neg"))
+t2=table(y,y.pred);colnames(t2)=c("pos_pred","neg_pred")
+kable(t2)
+```
+
+由训练集预测混淆矩阵可知
+
+-   准确率(accuracy)：`r mean(y.pred==y) %>% round(4)*100`%
+-   精确率(precision)：`r (Precision=t2[1,1]/sum(t2[1,])) %>% round(4)*100`%
+-   召回率(recall)：`r (Recall=t2[1,1]/sum(t2[,1])) %>% round(4)*100`%
+-   $F_1$得分($F_1$ score)：`r (2*Precision*Recall/(Precision+Recall)) %>% round(4)*100`%
+
+### 回归模型边际效应
+
+```{r}
+#| echo: false
+
+X=as.matrix(cbind(1,data.train[,-2]));
+xbat<-(apply(X,2,mean))
+W=coef(glm.fits)
+(dlogis(sum(xbat*W))*W)[-1] %>% round(4)*100 
+```
+
+-   年龄每增加一岁患病风险提高0.26%；体重指数每增加1患病风险提高1.94%；血糖浓度每增加1患病风险提高0.7%；舒张压每增加1患病风险降低0.11%；怀孕次数每增加一次患病风险提高2.14%。
+
+-   体重指数、血糖浓度、怀孕次数对患病风险呈正向影响，符合预期。
+
+-   年龄和舒张压对患病风险影响小且不显著，考虑逐步回归选择更合适的模型
+
+## Logisitic回归逐步回归
+
+### 逐步回归的回归方程
+
+### 逐步回归的预测效果
+
+### 逐步回归的边际效应
